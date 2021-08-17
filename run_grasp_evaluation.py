@@ -95,7 +95,6 @@ def create_sim(gym, use_viewer, args):
     sim_params.flex.num_inner_iterations = 200
     sim_params.flex.relaxation = 0.75
     sim_params.flex.warm_start = 0.8
-
     sim_params.flex.deterministic_mode = True
 
     # Set contact parameters
@@ -253,7 +252,7 @@ def main():
     # Load Franka and object assets
     asset_file_franka = 'franka_description/robots/franka_panda_fem_simple_v4_with_arm.urdf'
     asset_file_platform = os.path.join(ASSETS_DIR, 'platform.urdf')
-    asset_file_object = os.path.join(object_path, "soft_body.urdf")
+    asset_file_object = os.path.join(object_path, "rectangle.urdf")
 
     # Set object parameters based on command line args (TODO: Use new methods)
     set_parameter_result = False

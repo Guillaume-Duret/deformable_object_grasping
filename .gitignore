@@ -46,3 +46,7 @@ venv
 *.swo
 *.swa
 *checkpoint.ipynb
+
+# Python package files
+*.egg-info
+__pycache__

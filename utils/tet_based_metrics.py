@@ -63,7 +63,7 @@ def get_stresses_only(gym, sim, envs, env_index, particle_state_tensor):
 
     vm_stresses = np.zeros((num_envs, num_tets_per_env))
     env = envs[env_index]
-    tet_range = gym.get_actor_tetrahedra_range(env, 1, 0)
+    tet_range = gym.get_actor_tetrahedra_range(env, 0, 0)
 
     for global_tet_index in range(tet_range.start,
                                   tet_range.start + tet_range.count):
@@ -88,12 +88,12 @@ def get_tet_based_metrics(gym, sim, envs, env_index, particle_state_tensor,
     total_strain_energy = 0.0
     total_volume = 0.0
     env = envs[env_index]
-    tet_range = gym.get_actor_tetrahedra_range(env, 1, 0)
+    tet_range_l = gym.get_actor_tetrahedra_range(env, 0, 0)
 
     weighted_location = 0.0
 
-    for global_tet_index in range(tet_range.start,
-                                  tet_range.start + tet_range.count):
+    for global_tet_index in range(tet_range_l.start,
+                                  tet_range_l.start + tet_range_l.count):
         ts = tet_stresses[global_tet_index]
 
         ti = tet_particles[4 * global_tet_index:4 * global_tet_index
