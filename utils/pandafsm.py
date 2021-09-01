@@ -52,7 +52,7 @@ class PandaFsm:
     """FSM for control of Panda hand for the grasp tests."""
 
     def __init__(self, gym_handle, sim_handle, env_handles, franka_handle,
-                 platform_handle, state, object_cof, f_errs,
+                 platform_handle, object_handle, state, object_cof, f_errs,
                  grasp_transform, obj_name, env_id, hand_origin, viewer,
                  envs_per_row, env_dim, youngs, density, directions, mode):
         """Initialize attributes of grasp evaluation FSM.
@@ -103,8 +103,10 @@ class PandaFsm:
         # Actors
         self.franka_handle = franka_handle
         self.platform_handle = platform_handle
+        self.object_handle = object_handle
         num_franka_bodies = self.gym_handle.get_actor_rigid_body_count(
             self.env_handle, self.franka_handle)
+
         num_platform_bodies = self.gym_handle.get_actor_rigid_body_count(
             self.env_handle, self.platform_handle)
         total_num_bodies = num_franka_bodies + num_platform_bodies
@@ -119,11 +121,13 @@ class PandaFsm:
             total_num_bodies * self.env_id + num_franka_bodies + 1
         ]
 
+
         # Object material and mesh values
         self.obj_name = obj_name
         self.object_cof = object_cof
         self.particle_state_tensor = gymtorch.wrap_tensor(
             self.gym_handle.acquire_particle_state_tensor(self.sim_handle))
+
         self.previous_particle_state_tensor = None
         self.state_tensor_length = 0
         self.youngs = float(youngs)
@@ -136,7 +140,7 @@ class PandaFsm:
         self.initial_desired_force = 0.0
         self.corrected_desired_force = 0.0
         self.F_history = []
-        self.F_max_window_size = 300
+        self.F_max_window_size = 50
         self.filtered_forces = []
         self.moving_average = []
         self.f_errs = f_errs
@@ -291,7 +295,7 @@ class PandaFsm:
 
         torque_des = self.running_torque
         if DEBUG:
-            print(torque_des[-2:], total_F_curr, self.desired_force)
+            print(np.sum(F_curr[1:]), total_F_curr, self.desired_force)
 
         return torque_des, F_curr_mag, total_F_err
 
@@ -303,6 +307,10 @@ class PandaFsm:
         left_force_mags = []
         left_barys = []
         right_contacts = []
+        hl = int(self.state_tensor_length/2)
+
+        # Hard coded 
+        body_index = [17]
         for contact in self.contacts:
             curr_body_index = contact[4]
             # If the rigid body (identified by body_index) is in contact
@@ -314,22 +322,52 @@ class PandaFsm:
                 normal_to_gripper = self.grasp_transform.transform_vector(
                     gymapi.Vec3(1., 0., 0.))
 
-                if True:
-                    normal_component = curr_force_mag * normal_to_gripper.dot(
-                        gymapi.Vec3(curr_force_dir[0], curr_force_dir[1],
-                                    curr_force_dir[2]))
-                    if curr_body_index == body_index[0]:
-                        net_hor_force_left += np.abs(normal_component)
-                        left_contacts.append(contact[2])
-                        left_force_mags.append(curr_force_mag)
-                        left_barys.append(contact[3])
-                    elif curr_body_index == body_index[1]:
-                        net_hor_force_right += np.abs(normal_component)
-                        right_contacts.append(contact[2])
+
+                normal_component = curr_force_mag * normal_to_gripper.dot(
+                    gymapi.Vec3(curr_force_dir[0], curr_force_dir[1],
+                                curr_force_dir[2]))
+
+                if contact[2][0] < hl:
+                    net_hor_force_left += np.abs(normal_component)
+                    left_contacts.append(contact[2])
+                    left_force_mags.append(curr_force_mag)
+                    left_barys.append(contact[3])
+                elif contact[2][0] >= hl:
+                    net_hor_force_right += np.abs(normal_component)
+                    right_contacts.append(contact[2])
 
         F_curr = np.array([-1.0, net_hor_force_left,
                            net_hor_force_right])  # -1 denotes unused
         F_curr_dot = 0.0
+
+
+        # if net_hor_force_left  > 0:
+        #     import matplotlib.pyplot as plt
+        #     fig = plt.figure(figsize=(8, 8))
+        #     ax = fig.add_subplot(111, projection='3d')
+        #     pos = np.copy(
+        #             self.particle_state_tensor.numpy()
+        #             [self.env_id * self.state_tensor_length:(self.env_id + 1)
+        #              * self.state_tensor_length, :])[:, :3]
+        #     X, Y, Z = pos[:,0], pos[:,1], pos[:,2]
+        #     hl = int(self.state_tensor_length/2)
+        #     X2, Y2, Z2 = pos[ci,0], pos[ci,1], pos[ci,2]
+
+        #     ax.scatter(X, Y, Z)
+        #     ax.scatter(X2, Y2, Z2)
+
+        #     max_range = np.array([X.max()-X.min(), Y.max()-Y.min(), Z.max()-Z.min()]).max() / 2.0
+
+        #     mid_x = (X.max()+X.min()) * 0.5
+        #     mid_y = (Y.max()+Y.min()) * 0.5
+        #     mid_z = (Z.max()+Z.min()) * 0.5
+        #     ax.set_xlim(mid_x - max_range, mid_x + max_range)
+        #     ax.set_ylim(mid_y - max_range, mid_y + max_range)
+        #     ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+        #     plt.show()
+        #     quit()
+
         return F_curr, F_curr_dot
 
     def get_node_indices_contacting_body(self, body_name):
@@ -355,6 +393,8 @@ class PandaFsm:
             if contact[4] in self.platform_indices:
                 return True
         return False
+
+
 
     def get_node_indices_contacting_fingers(self):
         """Get indices of the mesh nodes that are contacting the fingers."""
@@ -524,11 +564,22 @@ class PandaFsm:
 
         # Check if the object is in contact with the gripper
         num_contacts_with_finger = np.zeros(len(self.finger_indices))
+
+        ###
+        hl = int(self.state_tensor_length/2)
+
+        # Hard coded 
+        body_index = [17]
         for contact in self.contacts:
             curr_body_index = contact[4]
-            for i in range(len(self.finger_indices)):
-                if curr_body_index == self.finger_indices[i]:
-                    num_contacts_with_finger[i] += 1
+            # If the rigid body (identified by body_index) is in contact
+            if curr_body_index in body_index:
+                if contact[2][0] < hl:
+                    num_contacts_with_finger[0] += 1
+                elif contact[2][0] >= hl:
+                    num_contacts_with_finger[1] += 1
+
+        ###
 
         # Check if the object is in between the gripper
         state_tensor = self.particle_state_tensor.numpy()[
@@ -566,6 +617,9 @@ class PandaFsm:
         self.saved_platform_state = np.copy(
             self.gym_handle.get_actor_rigid_body_states(
                 self.env_handle, self.platform_handle, gymapi.STATE_ALL))
+        self.saved_rigid_object_state = np.copy(
+            self.gym_handle.get_actor_rigid_body_states(
+                self.env_handle, self.object_handle, gymapi.STATE_ALL))
         self.saved_franka_state = np.copy(
             self.gym_handle.get_actor_rigid_body_states(
                 self.env_handle, self.franka_handle, gymapi.STATE_ALL))
@@ -583,6 +637,11 @@ class PandaFsm:
                                                     self.saved_franka_state,
                                                     gymapi.STATE_ALL)
 
+        self.gym_handle.set_actor_rigid_body_states(self.env_handle,
+                                                    self.object_handle,
+                                                    self.saved_rigid_object_state,
+                                                    gymapi.STATE_ALL)
+
         self.gym_handle.set_particle_state_tensor(
             self.sim_handle, gymtorch.unwrap_tensor(self.saved_object_state))
         print("Reverting back to state", self.saved_fsm_state)
@@ -594,6 +653,16 @@ class PandaFsm:
         """Run state machine for running grasp tests."""
         self.full_counter += 1
 
+        # For debugging
+        # curr_platform_state = np.copy(
+        #     self.gym_handle.get_actor_rigid_body_states(
+        #         self.env_handle, self.platform_handle, gymapi.STATE_ALL))
+        # curr_object_state = np.copy(
+        #     self.gym_handle.get_actor_rigid_body_states(
+        #         self.env_handle, self.object_handle, gymapi.STATE_ALL))
+        # print(curr_object_state)
+
+
         # Get hand states, soft contacts
         self.franka_dof_states = self.gym_handle.get_actor_dof_states(
             self.env_handle, self.franka_handle, gymapi.STATE_ALL)
@@ -603,13 +672,14 @@ class PandaFsm:
         # Process finger grasp forces with LP filter and moving average
         F_curr, F_curr_dot = self.get_grasp_F_curr(self.finger_indices)
         self.F_history.append(np.sum(F_curr[1:]))
+
         window = self.F_history[-self.F_max_window_size:]
         filtered_force, avg_of_filter = 0.0, 0.0
         if len(window) > 10:
             filtered_force = butter_lowpass_filter(window)[-1]
         self.filtered_forces.append(filtered_force)
         if len(self.F_history) > 0:
-            avg_of_filter = np.mean(self.filtered_forces[-30:])
+            avg_of_filter = np.mean(self.filtered_forces[-10:])
         self.moving_average.append(avg_of_filter)
 
         # Get num_contacts, gripper_separation
@@ -623,6 +693,11 @@ class PandaFsm:
             self.franka_dof_states['pos'][-3:][1],
             self.franka_dof_states['pos'][-3:][2]
         ])
+
+        # Get rigid contacts
+        rigid_contacts = self.gym_handle.get_rigid_contacts(self.sim_handle)
+
+
 
         ############################################################################
         # OPEN STATE: Hand is initialized in a state where the fingers are open
@@ -656,8 +731,11 @@ class PandaFsm:
             self.mg = 9.81 * object_volume * self.density
             self.desired_force = self.FOS * 9.81 \
                 * object_volume * self.density / self.object_cof
-            self.initial_desired_force = self.desired_force
 
+            # For picking up the rigid object
+            self.desired_force = 3
+
+            self.initial_desired_force = self.desired_force
             # If hand starts in contact with object, end test
             if len(self.get_node_indices_contacting_body("hand")) > 0:
                 print(self.env_id, "in collision")
@@ -745,7 +823,6 @@ class PandaFsm:
                 -first_speed / (self.close_fails + 1),
                 -first_speed / (self.close_fails + 1)
             ])
-            self.vel_des = np.copy(closing_speeds)
 
             if np.sum(F_curr[1:]) > 300 * np.log10(self.youngs) / 4:
                 self.close_fails += 1
@@ -754,8 +831,18 @@ class PandaFsm:
                       np.sum(F_curr[1:]))
                 self.reset_saved_state()
 
-            in_contact = np.abs(F_curr[1]) > 0.005 and np.abs(
-                F_curr[2]) > 0.005
+            force_threshold = 0.005
+
+            left_in_contact = np.abs(F_curr[1]) > force_threshold
+            right_in_contact = np.abs(F_curr[2]) > force_threshold
+
+            if left_in_contact:
+                closing_speeds[-2] = 0.0
+            if right_in_contact:
+                closing_speeds[-1] = 0.0
+            self.vel_des = np.copy(closing_speeds)
+
+            in_contact = left_in_contact and right_in_contact
 
             if in_contact:
                 self.grippers_pre_squeeze = [
@@ -763,6 +850,19 @@ class PandaFsm:
                     self.franka_dof_states['pos'][-3:][2]
                 ]
                 self.state = "squeeze"
+
+                # Freeze max gripper positions to be current positions
+                dof_props = self.gym_handle.get_actor_dof_properties(
+                    self.env_handle, self.franka_handle)
+                dof_props['upper'][
+                    -1] = self.franka_dof_states['pos'][-1] + 1e-6
+                dof_props['upper'][
+                    -2] = self.franka_dof_states['pos'][-2] + 1e-6
+                self.gym_handle.set_actor_dof_properties(
+                    self.env_handle, self.franka_handle, dof_props)
+
+
+                print("Switch to squeeze")
 
         ############################################################################
         # SQUEEZE STATE: Fingers squeeze until desired force is applied
@@ -805,7 +905,7 @@ class PandaFsm:
                     and avg_of_filter > 10:
                 force_too_high = True
             if force_too_high:
-                print("Squeezing force too high, reset")
+                print("Squeezing force too high, reset", avg_of_filter)
                 self.squeezing_close_fails += 1
                 if self.squeezing_close_fails > 4:
                     self.state = "done"
@@ -859,10 +959,12 @@ class PandaFsm:
                 self.inferred_rot_force_counter > 30)
 
             # If desired squeezing forces is met
-            if np.all(
-                    np.abs(self.f_errs) < 0.05 * self.desired_force
-            ) and not self.squeezed_until_force and squeeze_guard and np.all(
-                    particles_contacting_gripper > 0):
+            # if np.all(
+            #         np.abs(self.f_errs) < 0.05 * self.desired_force
+            # ) and not self.squeezed_until_force and squeeze_guard and np.all(
+            #         particles_contacting_gripper > 0):
+            # Let platform down once force is larger than self.desired_force
+            if self.moving_average[-1] > self.desired_force:
 
                 if self.mode == "reorient":
                     assert (self.inferred_rot_force)
@@ -876,7 +978,7 @@ class PandaFsm:
                 self.gripper_force_at_force = np.sum(F_curr[1:])
                 self.gripper_distance_at_force = np.sum(
                     self.grippers_pre_squeeze) - curr_separation
-                self.get_contact_geometry_features()
+                # self.get_contact_geometry_features()
                 stresses_at_force, self.se_at_force, _, _ = tet_based_metrics.get_tet_based_metrics(
                     self.gym_handle, self.sim_handle, self.env_handles,
                     self.env_id, self.particle_state_tensor, self.youngs)
@@ -929,14 +1031,15 @@ class PandaFsm:
                 self.gym_handle.set_actor_dof_velocity_targets(
                     self.env_handle, self.platform_handle, [0.0])
 
-            if not object_on_platform:
+            if len(rigid_contacts) == 0:
                 self.hang_counter += 1
                 curr_stresses = tet_based_metrics.get_stresses_only(
                     self.gym_handle, self.sim_handle, self.env_handles,
                     self.env_id, self.particle_state_tensor)[self.env_id]
                 self.hang_stresses.append(curr_stresses)
 
-            if not object_on_platform and self.hang_counter > 50:
+            # if not object_on_platform and self.hang_counter > 50:
+            if len(rigid_contacts) == 0 and self.hang_counter > 50:
                 self.pickup_success = True
                 # Save current hanging mesh
                 self.positions_under_gravity = np.copy(
@@ -954,7 +1057,7 @@ class PandaFsm:
                 # Get gripper force
                 self.gripper_force_under_gravity = np.sum(F_curr[1:])
                 print(self.env_id, "Force under gravity",
-                      self.gripper_force_under_gravity)
+                      self.moving_average[-1])
 
                 # Move the platform far away
                 curr_joint_positions['pos'][0] = -0.4

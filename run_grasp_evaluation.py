@@ -79,7 +79,7 @@ def create_sim(gym, use_viewer, args):
     sim_type = gymapi.SIM_FLEX  # Can also use SIM_PHYSX
     sim_params = gymapi.SimParams()
     sim_params.dt = 1.0 / 1500
-    sim_params.substeps = 1
+    sim_params.substeps = 2
     sim_params.gravity = gymapi.Vec3(0.0, -9.81, 0.0)
     if args.mode in ["shake", "twist"]:
         sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
@@ -98,7 +98,7 @@ def create_sim(gym, use_viewer, args):
     sim_params.flex.deterministic_mode = True
 
     # Set contact parameters
-    sim_params.flex.shape_collision_distance = 5e-4
+    sim_params.flex.shape_collision_distance = 3e-4#5e-4
     sim_params.flex.contact_regularization = 1.0e-6
     sim_params.flex.shape_collision_margin = 1.0e-4
     sim_params.flex.dynamic_friction = 0.7
@@ -241,10 +241,10 @@ def main():
     asset_options.armature = 0.0  # Additional moment of inertia due to motors
     # 1e-4  # Collision distance for rigid bodies. Minkowski sum of collision
     # mesh and sphere. Default value is large, so set explicitly
-    asset_options.thickness = 0.0
+    asset_options.thickness = 0.001
     asset_options.linear_damping = 1.0  # Linear damping for rigid bodies
     asset_options.angular_damping = 0.0  # Angular damping for rigid bodies
-    asset_options.disable_gravity = True
+    # asset_options.disable_gravity = True
     # Activates PD position, velocity, or torque controller, instead of doing
     # DOF control in post-processing
     asset_options.default_dof_drive_mode = gymapi.DOF_MODE_VEL
@@ -253,6 +253,9 @@ def main():
     asset_file_franka = 'franka_description/robots/franka_panda_fem_simple_v4_with_arm.urdf'
     asset_file_platform = os.path.join(ASSETS_DIR, 'platform.urdf')
     asset_file_object = os.path.join(object_path, "rectangle.urdf")
+    kuka_asset_root = "../assets"
+    brick_asset_file = "urdf/ycb/061_foam_brick/061_foam_brick.urdf"
+
 
     # Set object parameters based on command line args (TODO: Use new methods)
     set_parameter_result = False
@@ -274,8 +277,11 @@ def main():
                                          asset_options)
     asset_options.fix_base_link = False
     asset_options.min_particle_mass = 1e-20  # 1e-4 by default
-    asset_handle_object = gym.load_asset(sim, asset_root, asset_file_object,
-                                         asset_options)
+
+    # asset_handle_object = gym.load_asset(sim, asset_root, asset_file_object,
+                                         # asset_options)
+    asset_handle_object = gym.load_asset(sim, kuka_asset_root, brick_asset_file, asset_options)
+
     asset_options.fix_base_link = True
     asset_handle_platform = gym.load_asset(sim, asset_root,
                                            asset_file_platform, asset_options)
@@ -351,7 +357,7 @@ def main():
         pose.p = neg_rot_x_transform.transform_vector(pose.p)
         pose.p.y += PLATFORM_HEIGHT
         franka_handle = gym.create_actor(env_handle, asset_handle_franka, pose,
-                                         f"franka_{i}", collision_group, 1)
+                                         f"franka_{i}", collision_group, 0)
         franka_handles.append(franka_handle)
         direction = np.array(
             [all_directions[i][1], all_directions[i][2],
@@ -405,21 +411,28 @@ def main():
         pose.p = from_trimesh_transform.transform_vector(
             gymapi.Vec3(0.0, 0.0, 0.0))
 
-        object_height_buffer = 0.001
+        object_height_buffer = 0.003#0.001
         pose.p.y += PLATFORM_HEIGHT + object_height_buffer
+
+
 
         object_handle = gym.create_actor(env_handle, asset_handle_object, pose,
                                          f"object_{i}", collision_group,
-                                         collision_filter)
+                                         0)
+        c = 0.5 + 0.5 * np.random.random(3)
+        color = gymapi.Vec3(c[0], c[1], c[2])
+        gym.set_rigid_body_color(env_handle, object_handle, 0, gymapi.MESH_VISUAL_AND_COLLISION, color)
+
         object_handles.append(object_handle)
 
         # Create platform
         height_of_platform = 0.005
         pose.p.y -= (height_of_platform + object_height_buffer +
                      + 0.5 * height_of_object)
+
         platform_handle = gym.create_actor(env_handle, asset_handle_platform,
                                            pose, f"platform_{i}",
-                                           collision_group, 1)
+                                           collision_group, 0)
         platform_handles.append(platform_handle)
 
     # Run simulation and view results
@@ -453,6 +466,7 @@ def main():
                                       env_handles=env_handles,
                                       franka_handle=franka_handles[i],
                                       platform_handle=platform_handles[i],
+                                      object_handle=object_handles[i],
                                       state=state,
                                       object_cof=sim_params.flex.dynamic_friction,
                                       f_errs=f_errs,

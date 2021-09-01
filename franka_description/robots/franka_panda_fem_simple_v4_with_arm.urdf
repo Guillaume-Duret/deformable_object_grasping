@@ -269,7 +269,7 @@
 		<child link="panda_left_finger_rigid"/>
 		<axis xyz="0 1 0"/>
 		<dynamics damping="100.0" friction="0.0"/>
-    		<limit lower="0.0" upper="0.04" velocity="1e9" effort="1e9"/>
+    		<limit lower="0.0" upper="0.04" velocity="1e2" effort="1e2"/>
 	</joint>
 
 	<joint name="panda_right_finger_joint" type="prismatic">
@@ -278,7 +278,7 @@
 		<child link="panda_right_finger_rigid"/>
 		<axis xyz="0 -1 0"/>
 		<dynamics damping="100.0" friction="0.0"/>
-    		<limit lower="0.0" upper="0.04" velocity="1e9" effort="1e9"/>
+    		<limit lower="0.0" upper="0.04" velocity="1e2" effort="1e2"/>
 	</joint>
 
 	<link name="panda_left_finger_rigid"> 
@@ -327,8 +327,8 @@
         <fem>
             <origin rpy="0.0 -1.57 1.57" xyz="0.0 0.0 0.1"/>
 			<density value="1e3"/>
-			<youngs value="1552230.93"/>
-			<poissons value="0.31645428"/>
+			<youngs value="2e5"/>
+			<poissons value="0.3"/>
 			<damping value="0.0"/>
             <attachDistance value="0.01" />
             <tetmesh filename="../meshes/custom/round_pad.tet" />
@@ -354,3 +354,4 @@
     </link>
 
 </robot>
+
