@@ -1,5 +1,5 @@
 <robot name="root">
-  <link name="link_rectangle_convex_piece_0">
+  <link name="link_rectangle">
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0" />
       <mass value="3.45E-05" />
@@ -9,7 +9,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0" />
       <geometry>
-        <mesh filename="rectangle_convex_piece_0.obj" scale="1.0000E+00 1.0000E+00 1.0000E+00" />
+        <mesh filename="rectangle.obj" scale="1.0000E+00 1.0000E+00 1.0000E+00" />
       </geometry>
       <material name="">
         <color rgba="7.50E-01 7.50E-01 7.50E-01 1" />
@@ -18,7 +18,7 @@
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0" />
       <geometry>
-        <mesh filename="rectangle_convex_piece_0.obj" scale="1.0000E+00 1.0000E+00 1.0000E+00" />
+        <mesh filename="rectangle.obj" scale="1.0000E+00 1.0000E+00 1.0000E+00" />
       </geometry>
     </collision>
   </link>

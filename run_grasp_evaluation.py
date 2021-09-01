@@ -253,8 +253,8 @@ def main():
     asset_file_franka = 'franka_description/robots/franka_panda_fem_simple_v4_with_arm.urdf'
     asset_file_platform = os.path.join(ASSETS_DIR, 'platform.urdf')
     asset_file_object = os.path.join(object_path, "rectangle.urdf")
-    kuka_asset_root = "../assets"
-    brick_asset_file = "urdf/ycb/061_foam_brick/061_foam_brick.urdf"
+    # kuka_asset_root = "../assets"
+    # brick_asset_file = "urdf/ycb/061_foam_brick/061_foam_brick.urdf"
 
 
     # Set object parameters based on command line args (TODO: Use new methods)
@@ -277,10 +277,10 @@ def main():
                                          asset_options)
     asset_options.fix_base_link = False
     asset_options.min_particle_mass = 1e-20  # 1e-4 by default
-
-    # asset_handle_object = gym.load_asset(sim, asset_root, asset_file_object,
-                                         # asset_options)
-    asset_handle_object = gym.load_asset(sim, kuka_asset_root, brick_asset_file, asset_options)
+    import pdb; pdb.set_trace()
+    asset_handle_object = gym.load_asset(sim, asset_root, asset_file_object,
+                                         asset_options)
+    # asset_handle_object = gym.load_asset(sim, asset_root, brick_asset_file, asset_options)
 
     asset_options.fix_base_link = True
     asset_handle_platform = gym.load_asset(sim, asset_root,
