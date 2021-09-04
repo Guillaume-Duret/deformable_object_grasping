@@ -40,6 +40,17 @@ def get_desired_rpy(reorient_quat, grasp_quat):
     return desired_transform, r.as_euler('ZYX')
 
 
+def get_desired_rpy_6dof(reorient_quat, grasp_quat):
+    """Return RPY angles for Panda joints based on the grasp pose in the Z-up convention."""
+    neg_rot_x = gymapi.Quat(0.7071068, 0, 0, -0.7071068)
+    desired_transform = neg_rot_x * reorient_quat * grasp_quat 
+    r = R.from_quat([
+        desired_transform.x, desired_transform.y, desired_transform.z,
+        desired_transform.w
+    ])
+    return desired_transform, r.as_euler('ZYX')
+
+
 def get_global_deformation_metrics(undeformed_mesh, deformed_mesh, get_field=False):
     """Get the mean and max deformation of the nodes over the entire mesh.
 

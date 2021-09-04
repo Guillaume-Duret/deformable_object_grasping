@@ -40,6 +40,7 @@ from utils import pandafsm
 from utils import uniform_sphere
 from utils import metrics_features_utils
 
+import json
 
 ASSETS_DIR = "examples/"
 RESULTS_DIR = "results/"
@@ -81,6 +82,9 @@ def create_sim(gym, use_viewer, args):
     sim_params.dt = 1.0 / 1500
     sim_params.substeps = 2
     sim_params.gravity = gymapi.Vec3(0.0, -9.81, 0.0)
+
+    # Remove gravity for now
+    sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
     if args.mode in ["shake", "twist"]:
         sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
 
@@ -251,8 +255,23 @@ def main():
 
     # Load Franka and object assets
     asset_file_franka = 'franka_description/robots/franka_panda_fem_simple_v4_with_arm.urdf'
+    asset_file_franka = 'yumi_description/urdf/yumi.urdf'
+
     asset_file_platform = os.path.join(ASSETS_DIR, 'platform.urdf')
     asset_file_object = os.path.join(object_path, "rectangle.urdf")
+    asset_file_object = os.path.join(object_path, object_name + ".urdf")
+
+    json_file = os.path.join(object_path, object_name + ".json")
+    json_contents = json.load(open(json_file))
+
+    obj_pose = np.asarray(json_contents[args.grasp_ind]['pose'])
+    yumi_pose = np.asarray(json_contents[args.grasp_ind]['grasp'])
+
+
+
+
+    # asset_file_object = os.path.join(object_path, "soft_body.urdf")
+
     # kuka_asset_root = "../assets"
     # brick_asset_file = "urdf/ycb/061_foam_brick/061_foam_brick.urdf"
 
@@ -277,10 +296,8 @@ def main():
                                          asset_options)
     asset_options.fix_base_link = False
     asset_options.min_particle_mass = 1e-20  # 1e-4 by default
-    import pdb; pdb.set_trace()
     asset_handle_object = gym.load_asset(sim, asset_root, asset_file_object,
                                          asset_options)
-    # asset_handle_object = gym.load_asset(sim, asset_root, brick_asset_file, asset_options)
 
     asset_options.fix_base_link = True
     asset_handle_platform = gym.load_asset(sim, asset_root,
@@ -334,6 +351,9 @@ def main():
         if args.mode.lower() in ["reorient", "shake", "twist"]:
             test_grasp_pose = grasp_candidate_poses[0]
 
+        yumi_pose_r = R.from_matrix(yumi_pose[:3, :3])
+        yumi_pose_quat = yumi_pose_r.as_quat()
+
         # Create environment
         env_handle = gym.create_env(sim, env_lower, env_upper, envs_per_row)
         env_handles.append(env_handle)
@@ -341,23 +361,33 @@ def main():
         # Define shared pose/collision parameters
         pose = gymapi.Transform()
         grasp_transform = gymapi.Transform()
-        grasp_transform.r = gymapi.Quat(test_grasp_pose[4], test_grasp_pose[5],
-                                        test_grasp_pose[6], test_grasp_pose[3])
+        # grasp_transform.r = gymapi.Quat(test_grasp_pose[4], test_grasp_pose[5],
+        #                                 test_grasp_pose[6], test_grasp_pose[3])
+        grasp_transform.r = gymapi.Quat(yumi_pose_quat[0], yumi_pose_quat[1],
+                                        yumi_pose_quat[2], yumi_pose_quat[3])
         identity_quat = gymapi.Quat(0., 0., 0., 1.)
 
-        _, desired_rpy = metrics_features_utils.get_desired_rpy(
+        _, desired_rpy = metrics_features_utils.get_desired_rpy_6dof(
             identity_quat, grasp_transform.r)
 
         collision_group = i
         collision_filter = 0
 
         # Create Franka actors
-        pose.p = gymapi.Vec3(test_grasp_pose[0], test_grasp_pose[1],
-                             test_grasp_pose[2])
-        pose.p = neg_rot_x_transform.transform_vector(pose.p)
+        # pose.p = gymapi.Vec3(test_grasp_pose[0], test_grasp_pose[1],
+        #                      test_grasp_pose[2])
+        pose.p = gymapi.Vec3(0.0, 0.0, 0.0)
+        pose.p = neg_rot_x_transform.transform_vector(gymapi.Vec3(yumi_pose[0, 3], yumi_pose[1, 3], yumi_pose[2, 3]))
+        # pose.p = gymapi.Vec3(yumi_pose[0, 3], yumi_pose[1, 3], yumi_pose[2, 3])
         pose.p.y += PLATFORM_HEIGHT
+
+
+        pose.r = neg_rot_x * grasp_transform.r
+        # pose.r = grasp_transform.r
+
+
         franka_handle = gym.create_actor(env_handle, asset_handle_franka, pose,
-                                         f"franka_{i}", collision_group, 0)
+                                         f"franka_{i}", collision_group, 1)
         franka_handles.append(franka_handle)
         direction = np.array(
             [all_directions[i][1], all_directions[i][2],
@@ -366,12 +396,24 @@ def main():
         curr_joint_positions = gym.get_actor_dof_states(
             env_handle, franka_handle, gymapi.STATE_ALL)
 
-        curr_joint_positions['pos'] = [
-            0., 0., 0., 0., 0., 0., 0., desired_rpy[0], desired_rpy[1],
-            desired_rpy[2], 0.0, 0.0, 0.0, 0, 0.04, 0.04
-        ]
+        num_robot_joints = len(curr_joint_positions['pos'])
 
-        curr_joint_positions['pos'] = np.zeros(16)
+        # curr_joint_positions['pos'] = [
+        #     0., 0., 0., 0., 0., 0., 0., desired_rpy[0], desired_rpy[1],
+        #     desired_rpy[2], 0.0, 0.0, 0.0, 0, 0.04, 0.04
+        # ]
+
+        curr_joint_positions['pos'] = np.zeros(num_robot_joints)
+        # curr_joint_positions['pos'][-2:] = [0.025, 0.025]
+        pris = neg_rot_x_transform.transform_vector(gymapi.Vec3(yumi_pose[0, 3], yumi_pose[1, 3], yumi_pose[2, 3]))
+        # curr_joint_positions['pos'][:3] = [pris.x, pris.y, pris.z]
+        # curr_joint_positions['pos'][3:6] = [desired_rpy[0], desired_rpy[1], desired_rpy[2]]
+
+
+        # curr_joint_positions['pos'] = [
+        #     0., 0., 0., 0., 0., 0., 0., desired_rpy[0], desired_rpy[1],
+        #     desired_rpy[2], 0.0, 0.0, 0.0, 0, 0.04, 0.04
+        # ]
 
         twist_axis = np.array([0., 0., 1.])
         pose_transform = R.from_euler('ZYX', desired_rpy)
@@ -388,12 +430,12 @@ def main():
         q0_ = twist_transform.apply(q0)
         disp_offset = q0 - q0_
 
-        curr_joint_positions['pos'] = [
-            disp_offset[0], disp_offset[1], disp_offset[2], twist_eulers[2],
-            twist_eulers[1], twist_eulers[0], 0., pose_correction_euler[2],
-            pose_correction_euler[1], pose_correction_euler[0], 0.0, 0.0, 0.0,
-            0, 0.04, 0.04
-        ]
+        # curr_joint_positions['pos'] = [
+        #     disp_offset[0], disp_offset[1], disp_offset[2], twist_eulers[2],
+        #     twist_eulers[1], twist_eulers[0], 0., pose_correction_euler[2],
+        #     pose_correction_euler[1], pose_correction_euler[0], 0.0, 0.0, 0.0,
+        #     0, 0.04, 0.04
+        # ]
 
         hand_origin = pose
         hand_origins.append(hand_origin)
@@ -403,16 +445,43 @@ def main():
         gym.set_actor_dof_states(env_handle, franka_handle,
                                  curr_joint_positions, gymapi.STATE_ALL)
 
+
+        # Create a sphere
+        sphere_file_object = os.path.join(os.path.join(ASSETS_DIR, 'sphere'), 'sphere' + ".urdf")
+        asset_handle_sphere = gym.load_asset(sim, asset_root, sphere_file_object,
+                                             asset_options)
+        sphere_handle = gym.create_actor(env_handle, asset_handle_sphere, pose,
+                                         f"sphere_{i}", 2,
+                                         0)
+
+
+
         # Create soft object
         tet_file_name = os.path.join(object_path, args.object + ".tet")
-        height_of_object = get_height_of_objects(tet_file_name)
+        
+        #height_of_object = get_height_of_objects(tet_file_name)
+        height_of_object = 0.1
+
         pose = gymapi.Transform()
         pose.r = neg_rot_x
-        pose.p = from_trimesh_transform.transform_vector(
-            gymapi.Vec3(0.0, 0.0, 0.0))
 
-        object_height_buffer = 0.003#0.001
-        pose.p.y += PLATFORM_HEIGHT + object_height_buffer
+        op = gymapi.Transform()
+        op.p = gymapi.Vec3(obj_pose[0, 3], obj_pose[1, 3], obj_pose[2, 3])
+
+        pose.p = neg_rot_x_transform.transform_vector(op.p)
+        # pose.p =op.p 
+
+        object_height_buffer = 0.0#0.001
+        pose.p.y += PLATFORM_HEIGHT + object_height_buffer 
+
+
+        # Object rotation
+        obj_rotation_matrix = obj_pose[:3, :3]
+        obj_r = R.from_matrix(obj_rotation_matrix)
+        obj_quat = obj_r.as_quat()
+        obj_quat = gymapi.Quat(obj_quat[0], obj_quat[1], obj_quat[2], obj_quat[3])
+        pose.r = neg_rot_x * obj_quat
+        # pose.r = obj_quat
 
 
 
@@ -427,12 +496,19 @@ def main():
 
         # Create platform
         height_of_platform = 0.005
+        # pose = gymapi.Transform()
+        # pose.p = from_trimesh_transform.transform_vector(
+        #     gymapi.Vec3(0.0, 0.0, 0.0))
+        # print(pose.p.y)
         pose.p.y -= (height_of_platform + object_height_buffer +
                      + 0.5 * height_of_object)
+        # print(pose.p.y)
+        # quit()
+        pose.r = neg_rot_x
 
         platform_handle = gym.create_actor(env_handle, asset_handle_platform,
                                            pose, f"platform_{i}",
-                                           collision_group, 0)
+                                           collision_group, 1)
         platform_handles.append(platform_handle)
 
     # Run simulation and view results

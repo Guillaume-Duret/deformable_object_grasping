@@ -227,7 +227,6 @@
 	</joint>
 
 
-
 	<link name="dummy_hand">
 		<inertial>
 		  <mass value="0.001"/>

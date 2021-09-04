@@ -106,6 +106,7 @@ class PandaFsm:
         self.object_handle = object_handle
         num_franka_bodies = self.gym_handle.get_actor_rigid_body_count(
             self.env_handle, self.franka_handle)
+        print(num_franka_bodies)
 
         num_platform_bodies = self.gym_handle.get_actor_rigid_body_count(
             self.env_handle, self.platform_handle)
@@ -714,23 +715,13 @@ class PandaFsm:
                 print("State tensor length", self.state_tensor_length)
 
             self.init_metrics_and_features()
-
             # Save current untouched mesh
             self.undeformed_mesh = np.copy(
                 self.particle_state_tensor.numpy()
                 [self.env_id * self.state_tensor_length:(self.env_id + 1)
                     * self.state_tensor_length, :][:, :3])
 
-            # Get pre-contact stresses, SE, and weight
-            self.pre_contact_stresses, self.pre_contact_se, \
-                object_volume, _ = tet_based_metrics.get_tet_based_metrics(
-                    self.gym_handle, self.sim_handle, self.env_handles,
-                    self.env_id, self.particle_state_tensor, self.youngs)
-            self.pre_contact_stresses = self.pre_contact_stresses[
-                self.env_id]
-            self.mg = 9.81 * object_volume * self.density
-            self.desired_force = self.FOS * 9.81 \
-                * object_volume * self.density / self.object_cof
+
 
             # For picking up the rigid object
             self.desired_force = 3
@@ -739,13 +730,13 @@ class PandaFsm:
             # If hand starts in contact with object, end test
             if len(self.get_node_indices_contacting_body("hand")) > 0:
                 print(self.env_id, "in collision")
-                self.state = 'done'
+                # self.state = 'done'
 
             # Save state, then transition to close
             self.save_full_state()
 
             # Transition when mesh stresses aren't zero (takes a couple of iterations)
-            if not np.all(self.pre_contact_stresses == 0):
+            if not np.all(self.pre_contact_stresses == 0): ### This needs to be changed
                 self.state = "close"
 
         ############################################################################
