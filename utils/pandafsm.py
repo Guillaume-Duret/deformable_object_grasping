@@ -30,10 +30,11 @@ from utils import panda_fk
 from utils import tet_based_metrics
 
 
-NUM_JOINTS = 16
+NUM_JOINTS = 8
+RIGID_OBJECT_BODY_INDEX = 10
 GRIPPER_TIP_Z_OFFSET = 0.112
 GRIPPER_TIP_Y_OFFSET = 0.00444222
-DEBUG = False
+DEBUG = True
 
 
 def butter_lowpass_filter(data):
@@ -296,7 +297,7 @@ class PandaFsm:
 
         torque_des = self.running_torque
         if DEBUG:
-            print(np.sum(F_curr[1:]), total_F_curr, self.desired_force)
+            print("Target gripper force:", self.desired_force, " --- Current gripper force:", total_F_curr)
 
         return torque_des, F_curr_mag, total_F_err
 
@@ -311,7 +312,7 @@ class PandaFsm:
         hl = int(self.state_tensor_length/2)
 
         # Hard coded 
-        body_index = [17]
+        body_index = [RIGID_OBJECT_BODY_INDEX]
         for contact in self.contacts:
             curr_body_index = contact[4]
             # If the rigid body (identified by body_index) is in contact
@@ -324,9 +325,10 @@ class PandaFsm:
                     gymapi.Vec3(1., 0., 0.))
 
 
-                normal_component = curr_force_mag * normal_to_gripper.dot(
-                    gymapi.Vec3(curr_force_dir[0], curr_force_dir[1],
-                                curr_force_dir[2]))
+                # normal_component = curr_force_mag * normal_to_gripper.dot(
+                #     gymapi.Vec3(curr_force_dir[0], curr_force_dir[1],
+                #                 curr_force_dir[2]))
+                normal_component = curr_force_mag
 
                 if contact[2][0] < hl:
                     net_hor_force_left += np.abs(normal_component)
@@ -535,42 +537,15 @@ class PandaFsm:
                    10 * self.desired_force)
 
     def particles_between_gripper(self):
-        """Return number of contacts with grippers and number of nodes between grippers."""
-        franka_dof_states = self.franka_dof_states
-        fk_map_left = panda_fk.get_fk(franka_dof_states['pos'],
-                                      self.hand_origin,
-                                      mode="left")
-        fk_map_right = panda_fk.get_fk(franka_dof_states['pos'],
-                                       self.hand_origin,
-                                       mode="right")
-
-        left_finger_position = np.array([
-            self.hand_origin.p.x,
-            self.hand_origin.p.y + GRIPPER_TIP_Y_OFFSET,
-            self.hand_origin.p.z + GRIPPER_TIP_Z_OFFSET,
-            1
-        ])
-        new_left_finger_position = fk_map_left.dot(left_finger_position)
-
-        right_finger_position = np.array([
-            self.hand_origin.p.x, self.hand_origin.p.y - GRIPPER_TIP_Y_OFFSET,
-            self.hand_origin.p.z + GRIPPER_TIP_Z_OFFSET, 1
-        ])
-        new_right_finger_position = fk_map_right.dot(right_finger_position)
-
-        left_normal = self.grasp_transform.transform_vector(
-            gymapi.Vec3(0, -0.03, 0.))
-        right_normal = self.grasp_transform.transform_vector(
-            gymapi.Vec3(0, 0.03, 0.))
-
         # Check if the object is in contact with the gripper
         num_contacts_with_finger = np.zeros(len(self.finger_indices))
+        num_nodes_between_fingers = np.zeros(len(self.finger_indices))
 
         ###
         hl = int(self.state_tensor_length/2)
 
         # Hard coded 
-        body_index = [17]
+        body_index = [RIGID_OBJECT_BODY_INDEX]
         for contact in self.contacts:
             curr_body_index = contact[4]
             # If the rigid body (identified by body_index) is in contact
@@ -579,31 +554,6 @@ class PandaFsm:
                     num_contacts_with_finger[0] += 1
                 elif contact[2][0] >= hl:
                     num_contacts_with_finger[1] += 1
-
-        ###
-
-        # Check if the object is in between the gripper
-        state_tensor = self.particle_state_tensor.numpy()[
-            self.env_id * self.state_tensor_length:(self.env_id + 1)
-            * self.state_tensor_length, :]
-        num_nodes_between_fingers = 0
-        for n in range(state_tensor.shape[0]):
-            pos = gymapi.Vec3(state_tensor[n][0].item(),
-                              state_tensor[n][1].item(),
-                              state_tensor[n][2].item())
-
-            pos.x -= self.env_x_offset
-            pos.z -= self.env_z_offset
-
-            left_project = pos - gymapi.Vec3(new_left_finger_position[0],
-                                             new_left_finger_position[1],
-                                             new_left_finger_position[2])
-            right_project = pos - gymapi.Vec3(new_right_finger_position[0],
-                                              new_right_finger_position[1],
-                                              new_right_finger_position[2])
-            if left_normal.dot(left_project) >= 0 and right_normal.dot(
-                    right_project) >= 0:
-                num_nodes_between_fingers += 1
 
         return num_contacts_with_finger, num_nodes_between_fingers
 
@@ -724,7 +674,7 @@ class PandaFsm:
 
 
             # For picking up the rigid object
-            self.desired_force = 3
+            self.desired_force = 0.5
 
             self.initial_desired_force = self.desired_force
             # If hand starts in contact with object, end test
@@ -736,14 +686,16 @@ class PandaFsm:
             self.save_full_state()
 
             # Transition when mesh stresses aren't zero (takes a couple of iterations)
-            if not np.all(self.pre_contact_stresses == 0): ### This needs to be changed
+            
+            # When object has settled on the platform
+            if len(rigid_contacts) > 0:
+
                 self.state = "close"
 
         ############################################################################
         # CLOSE STATE: Fingers close rapidly until contact with object is made
         ############################################################################
         if self.state == 'close':
-
             closing_speeds = np.zeros(NUM_JOINTS)
             closing_speeds[-2:] = np.array([-0.5, -0.5])
             self.vel_des = np.copy(closing_speeds)
@@ -769,8 +721,11 @@ class PandaFsm:
 
             # Catch failure case where object is not between fingers
             if not in_contact and (
-                    self.franka_dof_states['pos'][-3:][1] < 0.0001
-                    and self.franka_dof_states['pos'][-3:][2] < 0.0001):
+                    self.franka_dof_states['pos'][-1] < -(0.025-0.0001)
+                    and self.franka_dof_states['pos'][-2] -(0.025-0.0001)):
+            # if not in_contact and (
+            #         self.franka_dof_states['pos'][-3:][1] < 0.0001
+            #         and self.franka_dof_states['pos'][-3:][2] < 0.0001):
                 print(self.env_id,
                       "Failed: Grippers closed without contacting object.")
                 self.state = 'done'
@@ -908,27 +863,28 @@ class PandaFsm:
                 self.squeeze_lost_contact_counter += 1
             else:
                 self.squeeze_lost_contact_counter = 0
-
             if self.squeeze_lost_contact_counter > 100:
                 print("Lost contact during squeezing, reset")
-                self.squeezing_close_fails += 1
-                self.squeeze_lost_contact_counter = 0
-                if self.squeezing_close_fails > 4:
-                    self.state = "done"
-                else:
-                    self.reset_saved_state()
+                self.state = "done"
+                # self.squeezing_close_fails += 1
+                # self.squeeze_lost_contact_counter = 0
+                # if self.squeezing_close_fails > 4:
+                #     self.state = "done"
+                # else:
+                #     self.reset_saved_state()
 
             # 3. Detect whether object is no longer between grippers
             if self.franka_dof_states['pos'][-3:][
-                    1] < 0.0001 and self.franka_dof_states['pos'][-3:][
-                        2] < 0.0001:
+                    1] < -(0.025-0.0001) and self.franka_dof_states['pos'][-3:][
+                        2] < -(0.025-0.0001):
                 print("Can't close that tightly during squeezing, reset")
-                self.squeezing_close_fails += 1
-                self.squeezing_no_grasp += 1
-                if self.squeezing_close_fails > 4 or self.squeezing_no_grasp > 2:
-                    self.state = "done"
-                else:
-                    self.reset_saved_state()
+                self.state = "done"
+                # self.squeezing_close_fails += 1
+                # self.squeezing_no_grasp += 1
+                # if self.squeezing_close_fails > 4 or self.squeezing_no_grasp > 2:
+                #     self.state = "done"
+                # else:
+                #     self.reset_saved_state()
 
             # 4. Detect whether grippers have exceeded joint limits
             # (occurs when there are spikes in force readings-> spikes in torque responses)
@@ -979,13 +935,6 @@ class PandaFsm:
                 curr_joint_positions = self.gym_handle.get_actor_dof_states(
                     self.env_handle, self.platform_handle, gymapi.STATE_ALL)
 
-                # Record location of gripper fingers
-                mid_fk_map = panda_fk.get_fk(self.franka_dof_states['pos'],
-                                             self.hand_origin,
-                                             mode="mid")
-                self.mid_finger_position_transformed = mid_fk_map.dot(
-                    self.mid_finger_position)[:3]
-
                 print("Platform lower")
                 self.state = "hang"
 
@@ -1012,25 +961,21 @@ class PandaFsm:
             curr_joint_positions = self.gym_handle.get_actor_dof_states(
                 self.env_handle, self.platform_handle, gymapi.STATE_ALL)
 
-            object_on_platform = self.object_contacting_platform()
+            object_on_platform = len(rigid_contacts) > 0 #self.object_contacting_platform()
 
-            if np.all(np.abs(self.f_errs[-10:]) < 0.05
-                      * self.desired_force) or np.all(self.f_errs[-10:] < 0.0):
-                self.gym_handle.set_actor_dof_velocity_targets(
-                    self.env_handle, self.platform_handle, [-0.08])
-            else:
-                self.gym_handle.set_actor_dof_velocity_targets(
-                    self.env_handle, self.platform_handle, [0.0])
 
-            if len(rigid_contacts) == 0:
+            self.gym_handle.set_actor_dof_velocity_targets(
+                self.env_handle, self.platform_handle, [-0.2])
+
+
+            if not object_on_platform:
                 self.hang_counter += 1
                 curr_stresses = tet_based_metrics.get_stresses_only(
                     self.gym_handle, self.sim_handle, self.env_handles,
                     self.env_id, self.particle_state_tensor)[self.env_id]
                 self.hang_stresses.append(curr_stresses)
 
-            # if not object_on_platform and self.hang_counter > 50:
-            if len(rigid_contacts) == 0 and self.hang_counter > 50:
+            if not object_on_platform and self.hang_counter > 50:
                 self.pickup_success = True
                 # Save current hanging mesh
                 self.positions_under_gravity = np.copy(
@@ -1086,9 +1031,10 @@ class PandaFsm:
                     self.franka_dof_states['pos'][-2:]) - 0.5 * (
                         np.sum(curr_gripper_positions) - des_gripper_width)
 
-            elif (curr_joint_positions['pos'][0] <= -0.2
-                  and object_on_platform) or np.all(
+
+            elif curr_joint_positions['pos'][0] <= -0.2 and np.all(
                       particles_contacting_gripper == 0.0):
+
                 self.pickup_success = False
                 print(self.env_id, "Pickup success:", self.pickup_success)
                 self.state = "done"

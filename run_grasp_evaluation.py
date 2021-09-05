@@ -84,7 +84,7 @@ def create_sim(gym, use_viewer, args):
     sim_params.gravity = gymapi.Vec3(0.0, -9.81, 0.0)
 
     # Remove gravity for now
-    sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
+    # sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
     if args.mode in ["shake", "twist"]:
         sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
 
@@ -468,7 +468,7 @@ def main():
         pose.p = neg_rot_x_transform.transform_vector(op.p)
         # pose.p =op.p 
 
-        object_height_buffer = 0.0#0.001
+        object_height_buffer = 0.005#0.001 # initialize the object a bit above the platform so it can settle down
         pose.p.y += PLATFORM_HEIGHT + object_height_buffer 
 
 
@@ -497,8 +497,12 @@ def main():
         # pose.p = from_trimesh_transform.transform_vector(
         #     gymapi.Vec3(0.0, 0.0, 0.0))
         # print(pose.p.y)
-        pose.p.y -= (height_of_platform + object_height_buffer +
-                     + 0.5 * height_of_object)
+        # print(pose.p.y)
+        # quit()
+        pose.p.y = PLATFORM_HEIGHT - height_of_platform
+
+        # (height_of_platform + object_height_buffer +
+                     # + 0.5 * height_of_object)
         # print(pose.p.y)
         # quit()
         pose.r = neg_rot_x
@@ -524,15 +528,13 @@ def main():
         else:
             test_grasp_pose = env_spread[i]
 
-        pure_grasp_transform = gymapi.Transform()
-        pure_grasp_transform.r = gymapi.Quat(test_grasp_pose[4],
-                                             test_grasp_pose[5],
-                                             test_grasp_pose[6],
-                                             test_grasp_pose[3])
-        grasp_transform = gymapi.Transform()
-        grasp_transform.r = neg_rot_x * gymapi.Quat(
-            test_grasp_pose[4], test_grasp_pose[5], test_grasp_pose[6],
-            test_grasp_pose[3])
+        # grasp_transform = gymapi.Transform()
+        # grasp_transform.r = neg_rot_x * gymapi.Quat(
+        #     test_grasp_pose[4], test_grasp_pose[5], test_grasp_pose[6],
+        #     test_grasp_pose[3])
+        gym_grasp_transform = gymapi.Transform()
+
+        gym_grasp_transform.r = neg_rot_x * grasp_transform.r
 
         panda_fsm = pandafsm.PandaFsm(gym_handle=gym,
                                       sim_handle=sim,
@@ -543,7 +545,7 @@ def main():
                                       state=state,
                                       object_cof=sim_params.flex.dynamic_friction,
                                       f_errs=f_errs,
-                                      grasp_transform=grasp_transform,
+                                      grasp_transform=gym_grasp_transform,
                                       obj_name=object_name,
                                       env_id=i,
                                       hand_origin=hand_origins[i],
