@@ -254,7 +254,7 @@ def main():
     asset_options.default_dof_drive_mode = gymapi.DOF_MODE_VEL
 
     # Load Franka and object assets
-    asset_file_franka = 'franka_description/robots/franka_panda_fem_simple_v4_with_arm.urdf'
+    # asset_file_franka = 'franka_description/robots/franka_panda_fem_simple_v4_with_arm.urdf'
     asset_file_franka = 'yumi_description/urdf/yumi.urdf'
 
     asset_file_platform = os.path.join(ASSETS_DIR, 'platform.urdf')
@@ -445,16 +445,13 @@ def main():
         gym.set_actor_dof_states(env_handle, franka_handle,
                                  curr_joint_positions, gymapi.STATE_ALL)
 
-
         # Create a sphere
-        sphere_file_object = os.path.join(os.path.join(ASSETS_DIR, 'sphere'), 'sphere' + ".urdf")
-        asset_handle_sphere = gym.load_asset(sim, asset_root, sphere_file_object,
-                                             asset_options)
-        sphere_handle = gym.create_actor(env_handle, asset_handle_sphere, pose,
-                                         f"sphere_{i}", 2,
-                                         0)
-
-
+        # sphere_file_object = os.path.join(os.path.join(ASSETS_DIR, 'sphere'), 'sphere' + ".urdf")
+        # asset_handle_sphere = gym.load_asset(sim, asset_root, sphere_file_object,
+        #                                      asset_options)
+        # sphere_handle = gym.create_actor(env_handle, asset_handle_sphere, pose,
+        #                                  f"sphere_{i}", 2,
+        #                                  0)
 
         # Create soft object
         tet_file_name = os.path.join(object_path, args.object + ".tet")
