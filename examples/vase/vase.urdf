@@ -2,9 +2,8 @@
   <link name="link_rectangle">
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0" />
-      <mass value="3.45E-05" />
-      
-      <inertia ixx="3.83E-09" ixy="-3.52E-13" ixz="1.58E-14" iyy="1.15E-08" iyz="-8.70E-12" izz="1.30E-08" />
+      <mass value="0.0131" />
+      <inertia ixx="1.17233597E-05" ixy="-2.40327339E-08" ixz="5.53726561E-07" iyy="1.05432346E-05" iyz="-2.25982077E-07" izz="6.29217711E-06" />
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0" />

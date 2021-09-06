@@ -258,7 +258,7 @@ def main():
     asset_file_franka = 'yumi_description/urdf/yumi.urdf'
 
     asset_file_platform = os.path.join(ASSETS_DIR, 'platform.urdf')
-    asset_file_object = os.path.join(object_path, "rectangle.urdf")
+    # asset_file_object = os.path.join(object_path, "rectangle.urdf")
     asset_file_object = os.path.join(object_path, object_name + ".urdf")
 
     json_file = os.path.join(object_path, object_name + ".json")
