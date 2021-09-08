@@ -32,6 +32,7 @@ from utils import tet_based_metrics
 
 NUM_JOINTS = 8
 RIGID_OBJECT_BODY_INDEX = 10
+PLATFORM_BODY_INDEX = 12
 GRIPPER_TIP_Z_OFFSET = 0.112
 GRIPPER_TIP_Y_OFFSET = 0.00444222
 DEBUG = True
@@ -232,6 +233,7 @@ class PandaFsm:
         self.full_counter = 0
         self.inferred_rot_force_counter = 0
         self.hang_counter = 0
+        self.hang_counter_no_contact = 0
         self.reorient_counter = 0
         self.open_counter = 0
         self.close_soft_counter = 0
@@ -389,6 +391,12 @@ class PandaFsm:
                 all_contact_indices.append(contact[2][0])
 
         return all_contact_indices
+
+    def object_in_contact_with_hand(self, rigid_contacts):
+        for r in rigid_contacts:
+            if sorted([r['body0'], r['body1']]) != sorted([RIGID_OBJECT_BODY_INDEX, PLATFORM_BODY_INDEX]):
+                return True
+        return False
 
     def object_contacting_platform(self):
         """Return True if the soft object is in contact with the platform."""
@@ -678,9 +686,11 @@ class PandaFsm:
 
             self.initial_desired_force = self.desired_force
             # If hand starts in contact with object, end test
-            if len(self.get_node_indices_contacting_body("hand")) > 0:
-                print(self.env_id, "in collision")
+            if self.object_in_contact_with_hand(rigid_contacts):
+                print("Object started in collision with gripper")
                 # self.state = 'done'
+
+
 
             # Save state, then transition to close
             self.save_full_state()
@@ -689,8 +699,8 @@ class PandaFsm:
             
             # When object has settled on the platform
             if len(rigid_contacts) > 0:
-
-                self.state = "close"
+                # self.state = "close"
+                self.state = "close_soft"
 
         ############################################################################
         # CLOSE STATE: Fingers close rapidly until contact with object is made
@@ -967,6 +977,11 @@ class PandaFsm:
             self.gym_handle.set_actor_dof_velocity_targets(
                 self.env_handle, self.platform_handle, [-0.2])
 
+            print(particles_contacting_gripper, object_on_platform)
+            if np.all(particles_contacting_gripper == 0.0):
+                self.hang_counter_no_contact += 1
+            else:
+                self.hang_counter_no_contact = 0
 
             if not object_on_platform:
                 self.hang_counter += 1
@@ -975,7 +990,7 @@ class PandaFsm:
                     self.env_id, self.particle_state_tensor)[self.env_id]
                 self.hang_stresses.append(curr_stresses)
 
-            if not object_on_platform and self.hang_counter > 50:
+            if not object_on_platform and self.hang_counter > 100:
                 self.pickup_success = True
                 # Save current hanging mesh
                 self.positions_under_gravity = np.copy(
@@ -1031,9 +1046,7 @@ class PandaFsm:
                     self.franka_dof_states['pos'][-2:]) - 0.5 * (
                         np.sum(curr_gripper_positions) - des_gripper_width)
 
-
-            elif curr_joint_positions['pos'][0] <= -0.2 and np.all(
-                      particles_contacting_gripper == 0.0):
+            if self.hang_counter_no_contact > 10 and object_on_platform:
 
                 self.pickup_success = False
                 print(self.env_id, "Pickup success:", self.pickup_success)
