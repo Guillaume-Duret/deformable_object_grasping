@@ -108,7 +108,6 @@ class PandaFsm:
         self.object_handle = object_handle
         num_franka_bodies = self.gym_handle.get_actor_rigid_body_count(
             self.env_handle, self.franka_handle)
-        print(num_franka_bodies)
 
         num_platform_bodies = self.gym_handle.get_actor_rigid_body_count(
             self.env_handle, self.platform_handle)
@@ -689,8 +688,12 @@ class PandaFsm:
             # If hand starts in contact with object, end test
 
             if self.object_in_contact_with_hand(rigid_contacts):
-                print("Object started in collision with gripper")
-                # self.state = 'done'
+                print("Object started in collision with gripper", self.particles_contacting_gripper)
+                if self.particles_contacting_gripper[0] > 0:
+                    self.state = 'init_collision_left'
+                else:
+                    self.state = 'initial_collision_right'
+
 
 
 
@@ -979,7 +982,7 @@ class PandaFsm:
             self.gym_handle.set_actor_dof_velocity_targets(
                 self.env_handle, self.platform_handle, [-0.2])
 
-            print(particles_contacting_gripper, object_on_platform)
+            # print(particles_contacting_gripper, object_on_platform)
             if np.all(particles_contacting_gripper == 0.0):
                 self.hang_counter_no_contact += 1
             else:

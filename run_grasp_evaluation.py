@@ -170,6 +170,21 @@ def main():
     parser.set_defaults(write_results=False)
     args = parser.parse_args()
 
+    in_initial_collision = True
+    initial_gripper_joint_pos = [0.0, 0.0]
+    gripper_increase_increment = 0.005
+    while in_initial_collision:
+        init_collision_left, init_collision_right = setup_sim(args, initial_gripper_joint_pos)
+        in_initial_collision = init_collision_left or init_collision_right
+        if init_collision_left:
+            initial_gripper_joint_pos[0] += gripper_increase_increment
+        if init_collision_right:
+            initial_gripper_joint_pos[1] += gripper_increase_increment
+
+
+
+def setup_sim(args, initial_gripper_joint_pos):
+
     use_viewer = args.viewer
     write_results = args.write_results
     object_name = args.object
@@ -309,7 +324,6 @@ def main():
         viewer = None
 
     # Define transforms to convert between Trimesh and Isaac Gym conventions
-
     from_trimesh_transform = gymapi.Transform()
     from_trimesh_transform.r = gymapi.Quat(0, 0.7071068, 0,
                                            0.7071068)  # Rot_y(90), R_ba
@@ -339,8 +353,6 @@ def main():
     # Define shared pose/collision parameters
     pose = gymapi.Transform()
     grasp_transform = gymapi.Transform()
-    # grasp_transform.r = gymapi.Quat(test_grasp_pose[4], test_grasp_pose[5],
-    #                                 test_grasp_pose[6], test_grasp_pose[3])
     grasp_transform.r = gymapi.Quat(yumi_pose_quat[0], yumi_pose_quat[1],
                                     yumi_pose_quat[2], yumi_pose_quat[3])
     identity_quat = gymapi.Quat(0., 0., 0., 1.)
@@ -353,16 +365,12 @@ def main():
     collision_filter = 0
 
     # Create Franka actors
-    # pose.p = gymapi.Vec3(test_grasp_pose[0], test_grasp_pose[1],
-    #                      test_grasp_pose[2])
     pose.p = gymapi.Vec3(0.0, 0.0, 0.0)
     pose.p = neg_rot_x_transform.transform_vector(gymapi.Vec3(yumi_pose[0, 3], yumi_pose[1, 3], yumi_pose[2, 3]))
-    # pose.p = gymapi.Vec3(yumi_pose[0, 3], yumi_pose[1, 3], yumi_pose[2, 3])
     pose.p.y += PLATFORM_HEIGHT
 
 
     pose.r = neg_rot_x * grasp_transform.r
-    # pose.r = grasp_transform.r
 
 
     franka_handle = gym.create_actor(env_handle, asset_handle_franka, pose,
@@ -379,7 +387,7 @@ def main():
 
 
     curr_joint_positions['pos'] = np.zeros(num_robot_joints)
-    # curr_joint_positions['pos'][-2:] = [0.01, 0.01]
+    curr_joint_positions['pos'][-2:] = initial_gripper_joint_pos
     pris = neg_rot_x_transform.transform_vector(gymapi.Vec3(yumi_pose[0, 3], yumi_pose[1, 3], yumi_pose[2, 3]))
 
 
@@ -398,12 +406,6 @@ def main():
     q0_ = twist_transform.apply(q0)
     disp_offset = q0 - q0_
 
-    # curr_joint_positions['pos'] = [
-    #     disp_offset[0], disp_offset[1], disp_offset[2], twist_eulers[2],
-    #     twist_eulers[1], twist_eulers[0], 0., pose_correction_euler[2],
-    #     pose_correction_euler[1], pose_correction_euler[0], 0.0, 0.0, 0.0,
-    #     0, 0.04, 0.04
-    # ]
 
     hand_origin = pose
     hand_origins.append(hand_origin)
@@ -413,18 +415,10 @@ def main():
     gym.set_actor_dof_states(env_handle, franka_handle,
                              curr_joint_positions, gymapi.STATE_ALL)
 
-    # Create a sphere
-    # sphere_file_object = os.path.join(os.path.join(ASSETS_DIR, 'sphere'), 'sphere' + ".urdf")
-    # asset_handle_sphere = gym.load_asset(sim, asset_root, sphere_file_object,
-    #                                      asset_options)
-    # sphere_handle = gym.create_actor(env_handle, asset_handle_sphere, pose,
-    #                                  f"sphere_{i}", 2,
-    #                                  0)
 
     # Create soft object
     tet_file_name = os.path.join(object_path, args.object + ".tet")
     
-    #height_of_object = get_height_of_objects(tet_file_name)
     height_of_object = 0.1
 
     pose = gymapi.Transform()
@@ -434,7 +428,6 @@ def main():
     op.p = gymapi.Vec3(obj_pose[0, 3], obj_pose[1, 3], obj_pose[2, 3])
 
     pose.p = neg_rot_x_transform.transform_vector(op.p)
-    # pose.p =op.p 
 
     object_height_buffer = 0.005#0.001 # initialize the object a bit above the platform so it can settle down
     pose.p.y += PLATFORM_HEIGHT + object_height_buffer 
@@ -446,8 +439,6 @@ def main():
     obj_quat = obj_r.as_quat()
     obj_quat = gymapi.Quat(obj_quat[0], obj_quat[1], obj_quat[2], obj_quat[3])
     pose.r = neg_rot_x * obj_quat
-    # pose.r = obj_quat
-
 
 
     object_handle = gym.create_actor(env_handle, asset_handle_object, pose,
@@ -461,18 +452,10 @@ def main():
 
     # Create platform
     height_of_platform = 0.005
-    # pose = gymapi.Transform()
-    # pose.p = from_trimesh_transform.transform_vector(
-    #     gymapi.Vec3(0.0, 0.0, 0.0))
-    # print(pose.p.y)
-    # print(pose.p.y)
-    # quit()
+
     pose.p.y = PLATFORM_HEIGHT - height_of_platform
 
-    # (height_of_platform + object_height_buffer +
-                 # + 0.5 * height_of_object)
-    # print(pose.p.y)
-    # quit()
+
     pose.r = neg_rot_x
 
     platform_handle = gym.create_actor(env_handle, asset_handle_platform,
@@ -486,14 +469,12 @@ def main():
 
     f_errs = np.ones(history, dtype=np.float32)
     panda_fsms = []
+
     directions = all_directions
+
 
     for i in range(len(env_handles)):
 
-        # grasp_transform = gymapi.Transform()
-        # grasp_transform.r = neg_rot_x * gymapi.Quat(
-        #     test_grasp_pose[4], test_grasp_pose[5], test_grasp_pose[6],
-        #     test_grasp_pose[3])
         gym_grasp_transform = gymapi.Transform()
 
         gym_grasp_transform.r = neg_rot_x * grasp_transform.r
@@ -520,11 +501,18 @@ def main():
                                       mode=args.mode.lower())
         panda_fsms.append(panda_fsm)
 
+    init_collision = run_state_machines(panda_fsms, gym, sim, use_viewer, viewer, env_handles)
+    return init_collision
+
+
+
+def run_state_machines(panda_fsms, gym, sim, use_viewer, viewer, env_handles):
     # Make updating plot
     all_done = False
+    init_collision_left, init_collision_right = False, False
     loop_start = timeit.default_timer()
 
-    while not all_done:
+    while not all_done and not (init_collision_left or init_collision_right):
 
         # If it is taking too long, declare fail
         if (timeit.default_timer() - loop_start > 700
@@ -545,6 +533,10 @@ def main():
 
         all_done = all(panda_fsms[i].state == 'done'
                        for i in range(len(env_handles)))
+        init_collision_left = all(panda_fsms[i].state == 'init_collision_left'
+                       for i in range(len(env_handles)))
+        init_collision_right = all(panda_fsms[i].state == 'init_collision_left'
+               for i in range(len(env_handles)))
 
         gym.refresh_particle_state_tensor(sim)
         for i in range(len(env_handles)):
@@ -568,10 +560,7 @@ def main():
     gym.destroy_sim(sim)
 
     print("Finished the simulation")
-
-
-    return
-
+    return init_collision_left, init_collision_right
 
 if __name__ == "__main__":
     start_time = timeit.default_timer()
