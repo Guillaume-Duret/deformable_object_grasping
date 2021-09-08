@@ -84,7 +84,7 @@ def create_sim(gym, use_viewer, args):
     sim_params.gravity = gymapi.Vec3(0.0, -9.81, 0.0)
 
     # Remove gravity for now
-    # sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
+    sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
     if args.mode in ["shake", "twist"]:
         sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
 

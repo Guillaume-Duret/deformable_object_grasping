@@ -393,6 +393,8 @@ class PandaFsm:
         return all_contact_indices
 
     def object_in_contact_with_hand(self, rigid_contacts):
+        if np.sum(self.particles_contacting_gripper) > 0.0:
+            return True
         for r in rigid_contacts:
             if sorted([r['body0'], r['body1']]) != sorted([RIGID_OBJECT_BODY_INDEX, PLATFORM_BODY_INDEX]):
                 return True
@@ -657,7 +659,6 @@ class PandaFsm:
         rigid_contacts = self.gym_handle.get_rigid_contacts(self.sim_handle)
 
 
-
         ############################################################################
         # OPEN STATE: Hand is initialized in a state where the fingers are open
         ############################################################################
@@ -686,6 +687,7 @@ class PandaFsm:
 
             self.initial_desired_force = self.desired_force
             # If hand starts in contact with object, end test
+
             if self.object_in_contact_with_hand(rigid_contacts):
                 print("Object started in collision with gripper")
                 # self.state = 'done'
