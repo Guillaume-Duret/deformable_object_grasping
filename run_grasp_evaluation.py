@@ -217,13 +217,6 @@ def main():
         else:
             print("Existing data is imperfect, rerunning")
 
-    # Get the grasp candidates
-    # grasp_file_name = object_name + "_grasps.h5"
-    # f = h5py.File(os.path.realpath(os.path.join(object_path, grasp_file_name)), 'r')
-    # grasp_candidate_poses = f['poses'][args.grasp_ind:args.grasp_ind + 1]
-    # num_grasp_poses = f['poses'].shape[0]
-    # f.close()
-
     # Create Gym object
     gym = gymapi.acquire_gym()
     sim, sim_params = create_sim(gym, use_viewer, args)
@@ -267,13 +260,6 @@ def main():
     obj_pose = np.asarray(json_contents[args.grasp_ind]['pose'])
     yumi_pose = np.asarray(json_contents[args.grasp_ind]['grasp'])
 
-
-
-
-    # asset_file_object = os.path.join(object_path, "soft_body.urdf")
-
-    # kuka_asset_root = "../assets"
-    # brick_asset_file = "urdf/ycb/061_foam_brick/061_foam_brick.urdf"
 
 
     # Set object parameters based on command line args (TODO: Use new methods)
@@ -391,22 +377,11 @@ def main():
 
     num_robot_joints = len(curr_joint_positions['pos'])
 
-    # curr_joint_positions['pos'] = [
-    #     0., 0., 0., 0., 0., 0., 0., desired_rpy[0], desired_rpy[1],
-    #     desired_rpy[2], 0.0, 0.0, 0.0, 0, 0.04, 0.04
-    # ]
 
     curr_joint_positions['pos'] = np.zeros(num_robot_joints)
-    # curr_joint_positions['pos'][-2:] = [0.025, 0.025]
+    # curr_joint_positions['pos'][-2:] = [0.01, 0.01]
     pris = neg_rot_x_transform.transform_vector(gymapi.Vec3(yumi_pose[0, 3], yumi_pose[1, 3], yumi_pose[2, 3]))
-    # curr_joint_positions['pos'][:3] = [pris.x, pris.y, pris.z]
-    # curr_joint_positions['pos'][3:6] = [desired_rpy[0], desired_rpy[1], desired_rpy[2]]
 
-
-    # curr_joint_positions['pos'] = [
-    #     0., 0., 0., 0., 0., 0., 0., desired_rpy[0], desired_rpy[1],
-    #     desired_rpy[2], 0.0, 0.0, 0.0, 0, 0.04, 0.04
-    # ]
 
     twist_axis = np.array([0., 0., 1.])
     pose_transform = R.from_euler('ZYX', desired_rpy)
