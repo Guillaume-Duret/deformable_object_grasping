@@ -692,7 +692,7 @@ class PandaFsm:
                 if self.particles_contacting_gripper[0] > 0:
                     self.state = 'init_collision_left'
                 else:
-                    self.state = 'initial_collision_right'
+                    self.state = 'init_collision_right'
 
 
 

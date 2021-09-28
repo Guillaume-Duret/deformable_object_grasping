@@ -1,3 +1,15 @@
+# ICRA-submission dexgrasp-related notes:
+All setup steps are same as follows, but to follow demo (cube grasps):
+
+```
+unzip data.zip # creates dexgrasp_data/
+python preprocess_obj.py <obj_name> # creates urdf for obj_name
+python run_grasp_evaluation.py --object=cube_3cm --grasp_ind=0 \
+	--mode=pickup  --youngs=1e8 --friction=0.4 # has viewer
+```
+
+For grasps on other objects, refer to README in `data.zip`.
+
 # Deformable Object Grasping
 This module provides a framework to automatically perform grasp tests on an arbitrary object model of choice. The details of these grasp tests can be found in our paper "What Makes a Good Grasp on a Deformable Object?". (link to pre-print to be added). For a full example walkthrough, see `examples/example.md`.
 

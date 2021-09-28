@@ -39,6 +39,7 @@ from scipy.spatial.transform import Rotation as R
 from utils import pandafsm
 from utils import uniform_sphere
 from utils import metrics_features_utils
+from utils import pose_rv
 
 import json
 
@@ -74,7 +75,7 @@ def get_height_of_objects(tet_file):
     return 2 * abs(min(zs))
 
 
-def create_sim(gym, use_viewer, args):
+def create_sim(gym, use_viewer, args, dynamic_friction):
     """Set sim parameters and create a Sim object."""
     # Set simulation parameters
     sim_type = gymapi.SIM_FLEX  # Can also use SIM_PHYSX
@@ -103,9 +104,10 @@ def create_sim(gym, use_viewer, args):
 
     # Set contact parameters
     sim_params.flex.shape_collision_distance = 3e-4#5e-4
+    # sim_params.flex.shape_collision_distance = 1e-4 # TODO cmk
     sim_params.flex.contact_regularization = 1.0e-6
     sim_params.flex.shape_collision_margin = 1.0e-4
-    sim_params.flex.dynamic_friction = 0.7
+    sim_params.flex.dynamic_friction = dynamic_friction
 
     # Create Sim object
     gpu_physics = 0
@@ -165,6 +167,7 @@ def main():
         default='',
         type=str,
         help="Additional tring to add onto name of results files.")
+    parser.add_argument('--friction', dest='dynamic_friction', type=float, help='dynamic friction', default=0.4)
     parser.set_defaults(viewer=False)
     parser.set_defaults(viewer=True)
     parser.set_defaults(write_results=False)
@@ -173,68 +176,35 @@ def main():
     in_initial_collision = True
     initial_gripper_joint_pos = [0.0, 0.0]
     gripper_increase_increment = 0.005
+
+    import time
+    start = time.time()
     while in_initial_collision:
-        init_collision_left, init_collision_right = setup_sim(args, initial_gripper_joint_pos)
+        init_collision_left, init_collision_right, success = setup_sim(args, initial_gripper_joint_pos, args.dynamic_friction)
         in_initial_collision = init_collision_left or init_collision_right
         if init_collision_left:
             initial_gripper_joint_pos[0] += gripper_increase_increment
         if init_collision_right:
             initial_gripper_joint_pos[1] += gripper_increase_increment
+    end = time.time()
+
+    os.makedirs('results', exist_ok=True)
+    with open('results/output_%s_%s_%.1f.txt' % (args.object, args.youngs, args.dynamic_friction), 'a+') as f:
+        for s in success:
+            f.write('%s\t%d\t%s\t%f\n' % (args.object, args.grasp_ind, int(s), end-start))
 
 
-
-def setup_sim(args, initial_gripper_joint_pos):
+def setup_sim(args, initial_gripper_joint_pos, dynamic_friction):
 
     use_viewer = args.viewer
     write_results = args.write_results
     object_name = args.object
     object_path = os.path.join(ASSETS_DIR, object_name)
 
-    folder_name = object_name + RESULTS_STORAGE_TAG
-    object_file_name = object_name + "_" + args.density + "_" + args.youngs + "_" + \
-        args.poissons + "_" + args.mode + "_tag" + args.tag + "_results.h5"
-    h5_file_path = os.path.join(RESULTS_DIR, folder_name, args.youngs, object_file_name)
-
-    # Optionally skip data collection if good data already exists (args.fill flag)
-    if os.path.exists(h5_file_path) and args.fill:
-        existing_h5 = h5py.File(h5_file_path, 'r')
-
-        existing_timed_out = existing_h5['timed_out'][args.grasp_ind,
-                                                      args.ori_start]
-        existing_succeeded = True
-
-        if args.mode == "pickup":
-            existing_pos_under_gravity_dset = existing_h5[
-                'positions_under_gravity']
-            if np.all(existing_pos_under_gravity_dset[args.grasp_ind] == 0):
-                existing_succeeded = False
-
-        if args.mode == "reorient":
-            reorientation_meshes_dset = existing_h5['reorientation_meshes']
-            if np.all(reorientation_meshes_dset[args.grasp_ind, args.ori_start,
-                                                0] == 0):
-                existing_succeeded = False
-
-        if args.mode == "shake":
-            shake_fail_accs_dset = existing_h5['shake_fail_accs']
-            if shake_fail_accs_dset[args.grasp_ind, args.ori_start] == 0.0:
-                existing_succeeded = False
-
-        if args.mode == "twist":
-            twist_fail_accs_dset = existing_h5['twist_fail_accs']
-            if twist_fail_accs_dset[args.grasp_ind, args.ori_start] == 0.0:
-                existing_succeeded = False
-
-        existing_h5.close()
-        if existing_timed_out == 0.0 and existing_succeeded:
-            print("Data already exists, returning")
-            return
-        else:
-            print("Existing data is imperfect, rerunning")
-
     # Create Gym object
     gym = gymapi.acquire_gym()
-    sim, sim_params = create_sim(gym, use_viewer, args)
+
+    sim, sim_params = create_sim(gym, use_viewer, args, dynamic_friction)
 
     # Define scene and environments
     envs_per_row = 6
@@ -254,6 +224,7 @@ def setup_sim(args, initial_gripper_joint_pos):
     # 1e-4  # Collision distance for rigid bodies. Minkowski sum of collision
     # mesh and sphere. Default value is large, so set explicitly
     asset_options.thickness = 0.001
+    # asset_options.thickness = 1e-4 # TODO cmk
     asset_options.linear_damping = 1.0  # Linear damping for rigid bodies
     asset_options.angular_damping = 0.0  # Angular damping for rigid bodies
     # asset_options.disable_gravity = True
@@ -269,13 +240,14 @@ def setup_sim(args, initial_gripper_joint_pos):
     # asset_file_object = os.path.join(object_path, "rectangle.urdf")
     asset_file_object = os.path.join(object_path, object_name + ".urdf")
 
-    json_file = os.path.join(object_path, object_name + ".json")
+    json_file = os.path.join('dexgrasp_data/phys_grasps_json/', object_name + ".json")
     json_contents = json.load(open(json_file))
 
     obj_pose = np.asarray(json_contents[args.grasp_ind]['pose'])
     yumi_pose = np.asarray(json_contents[args.grasp_ind]['grasp'])
 
-
+    sigma_trans, sigma_rot = 0.001, 0.003
+    yumi_pose = yumi_pose @ pose_rv.GaussianPoseRV(sigma_trans, sigma_rot).generate().matrix
 
     # Set object parameters based on command line args (TODO: Use new methods)
     set_parameter_result = False
@@ -444,7 +416,8 @@ def setup_sim(args, initial_gripper_joint_pos):
     object_handle = gym.create_actor(env_handle, asset_handle_object, pose,
                                      f"object_{i}", collision_group,
                                      0)
-    c = 0.5 + 0.5 * np.random.random(3)
+    # c = 0.5 + 0.5 * np.random.random(3)
+    c = np.ones(3) * 0.75
     color = gymapi.Vec3(c[0], c[1], c[2])
     gym.set_rigid_body_color(env_handle, object_handle, 0, gymapi.MESH_VISUAL_AND_COLLISION, color)
 
@@ -535,7 +508,7 @@ def run_state_machines(panda_fsms, gym, sim, use_viewer, viewer, env_handles):
                        for i in range(len(env_handles)))
         init_collision_left = all(panda_fsms[i].state == 'init_collision_left'
                        for i in range(len(env_handles)))
-        init_collision_right = all(panda_fsms[i].state == 'init_collision_left'
+        init_collision_right = all(panda_fsms[i].state == 'init_collision_right'
                for i in range(len(env_handles)))
 
         gym.refresh_particle_state_tensor(sim)
@@ -554,15 +527,61 @@ def run_state_machines(panda_fsms, gym, sim, use_viewer, viewer, env_handles):
         if use_viewer:
             gym.draw_viewer(viewer, sim, True)
 
+    success = [psim.pickup_success for psim in panda_fsms]
+
     # Clean up
     if use_viewer:
         gym.destroy_viewer(viewer)
     gym.destroy_sim(sim)
 
     print("Finished the simulation")
-    return init_collision_left, init_collision_right
+    return init_collision_left, init_collision_right, success
 
 if __name__ == "__main__":
     start_time = timeit.default_timer()
     main()
     print("Elapsed time", timeit.default_timer() - start_time)
+
+
+#     folder_name = object_name + RESULTS_STORAGE_TAG
+#     object_file_name = object_name + "_" + args.density + "_" + args.youngs + "_" + \
+#         args.poissons + "_" + args.mode + "_tag" + args.tag + "_results.h5"
+#     h5_file_path = os.path.join(RESULTS_DIR, folder_name, args.youngs, object_file_name)
+# 
+#     # Optionally skip data collection if good data already exists (args.fill flag)
+#     if os.path.exists(h5_file_path) and args.fill:
+#         existing_h5 = h5py.File(h5_file_path, 'r')
+# 
+#         existing_timed_out = existing_h5['timed_out'][args.grasp_ind,
+#                                                       args.ori_start]
+#         existing_succeeded = True
+# 
+#         if args.mode == "pickup":
+#             existing_pos_under_gravity_dset = existing_h5[
+#                 'positions_under_gravity']
+#             if np.all(existing_pos_under_gravity_dset[args.grasp_ind] == 0):
+#                 existing_succeeded = False
+# 
+#         if args.mode == "reorient":
+#             reorientation_meshes_dset = existing_h5['reorientation_meshes']
+#             if np.all(reorientation_meshes_dset[args.grasp_ind, args.ori_start,
+#                                                 0] == 0):
+#                 existing_succeeded = False
+# 
+#         if args.mode == "shake":
+#             shake_fail_accs_dset = existing_h5['shake_fail_accs']
+#             if shake_fail_accs_dset[args.grasp_ind, args.ori_start] == 0.0:
+#                 existing_succeeded = False
+# 
+#         if args.mode == "twist":
+#             twist_fail_accs_dset = existing_h5['twist_fail_accs']
+#             if twist_fail_accs_dset[args.grasp_ind, args.ori_start] == 0.0:
+#                 existing_succeeded = False
+# 
+#         existing_h5.close()
+#         if existing_timed_out == 0.0 and existing_succeeded:
+#             print("Data already exists, returning")
+#             return
+#         else:
+#             print("Existing data is imperfect, rerunning")
+# 

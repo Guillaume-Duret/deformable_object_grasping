@@ -50,3 +50,6 @@ venv
 # Python package files
 *.egg-info
 __pycache__
+
+# Dexgrasp data
+dexgrasp_data/

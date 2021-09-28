@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<robot name="NAME">
+  <link name="NAME">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="MASS" />
+      <inertia ixx="IXX" ixy="IXY" ixz="IXZ" iyy="IYY" iyz="IYZ" izz="IZZ" />
+    </inertial>
+    <visual>
+      <origin xyz="MEAN_X MEAN_Y MEAN_Z"/>
+      <geometry>
+        <mesh filename="COLLISION_OBJ" scale="SCALE SCALE SCALE"/>
+      </geometry>
+      <material name="">
+        <color rgba="7.50E-01 7.50E-01 7.50E-01 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="MEAN_X MEAN_Y MEAN_Z"/>
+      <geometry>
+        <mesh filename="GEOMETRY_OBJ" scale="SCALE SCALE SCALE"/>
+      </geometry>
+    </collision>
+  </link>
+</robot>
